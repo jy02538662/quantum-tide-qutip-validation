@@ -10,27 +10,29 @@ import numpy as np
 from src.metrics import DATA_DIR, ensure_outputs, save_csv
 
 
-def load_rows(path: Path):
+def load_smooth_rows(path: Path):
     with path.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        rows = list(reader)
-    numeric = []
-    for row in rows:
-        numeric.append({
-            "alpha": float(row["alpha"]),
-            "g0_over_omega_rabi0": float(row["g0_over_omega_rabi0"]),
-            "g0": float(row["g0"]),
-            "v_low": float(row["v_low"]),
-            "oscillator_ratio": float(row["oscillator_ratio"]),
-            "max_high_population": float(row["max_high_population"]),
-            "final_high_population": float(row["final_high_population"]),
-            "F_X": float(row["F_X"]),
-            "t_gate": float(row["t_gate"]),
-            "passes_leakage": int(float(row["passes_leakage"])),
-            "passes_fidelity": int(float(row["passes_fidelity"])),
-            "passes_both": int(float(row["passes_both"])),
-        })
-    return numeric
+        rows = []
+        for row in reader:
+            drag_lambda = float(row["drag_lambda"])
+            if abs(drag_lambda) > 1e-12:
+                continue
+            rows.append({
+                "g0_over_omega_rabi0": float(row["g0_over_omega_rabi0"]),
+                "g0": float(row["g0"]),
+                "v_low": float(row["v_low"]),
+                "oscillator_ratio": float(row["oscillator_ratio"]),
+                "drag_lambda": drag_lambda,
+                "t_gate": float(row["t_gate"]),
+                "max_high_population": float(row["max_high_population"]),
+                "final_high_population": float(row["final_high_population"]),
+                "F_X": float(row["F_X"]),
+                "passes_leakage": int(float(row["passes_leakage"])),
+                "passes_fidelity": int(float(row["passes_fidelity"])),
+                "passes_both": int(float(row["passes_both"])),
+            })
+    return rows
 
 
 def select_min(rows, key):
@@ -62,6 +64,7 @@ def summarize_group(r_value: float, group: list[dict]):
             "best_fidelity_pass_F_X": np.nan,
             "best_fidelity_pass_v_low": np.nan,
             "best_fidelity_pass_ratio": np.nan,
+            "best_leakage_pass_P_high_max": np.nan,
             "best_leakage_only_P_high_max": min(row["max_high_population"] for row in leak_rows) if leak_rows else np.nan,
             "near_pass_v_low": near["v_low"],
             "near_pass_ratio": near["oscillator_ratio"],
@@ -99,6 +102,7 @@ def summarize_group(r_value: float, group: list[dict]):
         "best_fidelity_pass_F_X": best_fidelity_row["F_X"],
         "best_fidelity_pass_v_low": best_fidelity_row["v_low"],
         "best_fidelity_pass_ratio": best_fidelity_row["oscillator_ratio"],
+        "best_leakage_pass_P_high_max": best_leakage_row["max_high_population"],
         "best_leakage_only_P_high_max": best_leakage_row["max_high_population"],
         "near_pass_v_low": np.nan,
         "near_pass_ratio": np.nan,
@@ -110,22 +114,23 @@ def summarize_group(r_value: float, group: list[dict]):
 
 def main():
     ensure_outputs()
-    input_path = DATA_DIR / "g0_over_omega_rabi0_alpha3_scan.csv"
+    input_path = DATA_DIR / "drag_alpha3_midlow_scan.csv"
     if not input_path.exists():
         raise FileNotFoundError(f"missing input CSV: {input_path}")
 
-    rows = load_rows(input_path)
+    rows = load_smooth_rows(input_path)
     r_values = sorted({row["g0_over_omega_rabi0"] for row in rows})
     summaries = [
         summarize_group(r_value, [row for row in rows if row["g0_over_omega_rabi0"] == r_value])
         for r_value in r_values
     ]
+    output_path = save_csv(
+        "smooth_alpha3_feasibility_boundary_table.csv",
+        {key: [row[key] for row in summaries] for key in summaries[0]},
+    )
 
-    columns = {key: [row[key] for row in summaries] for key in summaries[0]}
-    output_path = save_csv("alpha3_feasibility_boundary_table.csv", columns)
-
-    print("[alpha3_boundary] wrote", output_path)
-    print("\nalpha=3 hard feasibility boundary")
+    print("[smooth_boundary] wrote", output_path)
+    print("\nsmooth sin^2 pulse alpha=3 boundary, drag_lambda=0")
     print("r      pass   min_v  ratio@min_v  min_ratio  v@min_ratio  fastest_t  fastest_v  fastest_ratio  P_high      F_X")
     for row in summaries:
         print(
